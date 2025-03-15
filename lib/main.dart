@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cards.dart';
+import '../models/flip.dart';
 import 'dart:math';
 
 void main() {
@@ -9,7 +10,6 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Card Start Screen'),
     );
   }
 }
@@ -72,7 +72,12 @@ class MyGamePage extends StatefulWidget {
 
 class _MyGamePageState extends State<MyGamePage> {
   List<Cards> cards = [];
+  List<bool> flipped = [];
+  List<bool> matched = [];
   int score = 0;
+  int firstFlippedIndex = -1;
+  int secondFlippedIndex = -1;
+  bool waitingForCheck = false;
 
   @override
   void initState() {
@@ -84,7 +89,7 @@ class _MyGamePageState extends State<MyGamePage> {
     List<Cards> tempCards = [];
     for (int i = 0; i < 18; i++) {
       int cardNumber = Random().nextInt(13) + 1;
-      int cardSuite = Random().nextInt(4)+1;
+      int cardSuite = Random().nextInt(4) + 1;
       int cardID = cardSuite * 100 + cardNumber;
       tempCards.add(
         Cards(cardID: cardID, cardImagePath: "assets/images/back.jpg"),
@@ -92,6 +97,72 @@ class _MyGamePageState extends State<MyGamePage> {
     }
     cards = [...tempCards, ...tempCards];
     cards.shuffle();
+
+    flipped = List.generate(36, (index) => false);
+    matched = List.generate(36, (index) => false);
+  }
+
+  void flipCard(int index) {
+    if (matched[index] || flipped[index] || waitingForCheck) return;
+
+    setState(() {
+      flipped[index] = true;
+    });
+
+    if (firstFlippedIndex == -1) {
+      firstFlippedIndex = index;
+    } else {
+      secondFlippedIndex = index;
+      waitingForCheck = true;
+      Future.delayed(const Duration(seconds: 1), () {
+        checkMatch();
+      });
+    }
+  }
+
+  void checkMatch() {
+    if (cards[firstFlippedIndex].cardID == cards[secondFlippedIndex].cardID) {
+      setState(() {
+        matched[firstFlippedIndex] = true;
+        matched[secondFlippedIndex] = true;
+        score += 10;
+      });
+    } else {
+      setState(() {
+        flipped[firstFlippedIndex] = false;
+        flipped[secondFlippedIndex] = false;
+      });
+    }
+    firstFlippedIndex = -1;
+    secondFlippedIndex = -1;
+    waitingForCheck = false;
+
+    if (matched.every((m) => m)) {
+      showWinDialog();
+    }
+  }
+
+  void showWinDialog() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text("You Win!"),
+            content: Text("Final Score: $score"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  setState(() {
+                    generateCards();
+                    score = 0;
+                  });
+                },
+                child: const Text("Play Again"),
+              ),
+            ],
+          ),
+    );
   }
 
   @override
@@ -105,7 +176,10 @@ class _MyGamePageState extends State<MyGamePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Score:$score'),
+            Text(
+              'Score: $score',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
             Expanded(
               child: GridView.builder(
                 padding: const EdgeInsets.all(8.0),
@@ -117,25 +191,13 @@ class _MyGamePageState extends State<MyGamePage> {
                 ),
                 itemCount: cards.length,
                 itemBuilder: (BuildContext context, int index) {
-                  return GestureDetector(
-                    onTap: (){
-                      print(cards[index].cardID);
-                    },
-                    child: AspectRatio(
-                      aspectRatio: 0.7,
-                      child: Card(
-                        shape: RoundedRectangleBorder(),
-                        elevation: 4,
-                        child: ClipRRect(
-                          child: Image.asset(
-                            cards[index].cardImagePath,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
+                return FlipCard(
+                  frontImage: "assets/images/back.jpg", // Card back
+                  backImage: "assets/images/${cards[index].cardID}.png", // Card face
+                  isFlipped: flipped[index] || matched[index],
+                  onFlip: () => flipCard(index),
+                );
+              },
               ),
             ),
           ],
